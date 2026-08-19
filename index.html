@@ -31,7 +31,9 @@ small{color:var(--muted)}.notice{background:#eff6ff;color:#1e40af;border-radius:
     <div><label for="date1">Data de validade 1 <small>(obrigatória)</small></label><input id="date1" type="date"></div>
     <div><label for="date2">Data de validade 2 <small>(opcional)</small></label><input id="date2" type="date"></div>
     <div style="grid-column:1/-1"><label for="note">Observação <small>(opcional)</small></label><input id="note" placeholder="Ex.: Guardar na geladeira após aberto"></div>
+     <div><label for="number">Quantidade do produto</label><input id="number"></div>
   </div>
+  
   <div class="actions"><button class="primary" id="add">Adicionar produto</button><button class="secondary" id="notify">🔔 Ativar notificações</button></div>
   <div class="notice">Você precisa informar pelo menos uma data. Se houver duas, o sistema usa a <b>data mais próxima</b> para os alertas e para o vencimento do produto.</div>
 </section>
