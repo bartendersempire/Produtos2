@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.json">
+<title>Controle de Validade</title>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#dc2626;--warn:#d97706;--ok:#059669;--border:#e5e7eb}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text)}
+header{background:#111827;color:#fff;padding:24px 18px 28px}header h1{margin:0 0 6px;font-size:25px}header p{margin:0;color:#d1d5db}
+main{max-width:850px;margin:auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:14px;box-shadow:0 3px 12px #00000008}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:600px){.grid{grid-template-columns:1fr}}
+label{font-weight:650;font-size:14px;display:block;margin-bottom:6px}input{width:100%;padding:12px;border:1px solid #d1d5db;border-radius:10px;font-size:16px;background:#fff}
+button{border:0;border-radius:10px;padding:12px 15px;font-weight:700;cursor:pointer}button.primary{background:var(--primary);color:#fff}button.secondary{background:#e5e7eb;color:#111827}button.danger{background:#fee2e2;color:#991b1b}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.settings{display:flex;align-items:end;gap:10px;flex-wrap:wrap}.settings .field{max-width:180px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.stat{padding:14px;border-radius:14px;background:#f9fafb;border:1px solid var(--border)}.stat b{font-size:22px;display:block}.stat span{color:var(--muted);font-size:13px}
+.item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px 0;border-bottom:1px solid var(--border)}.item:last-child{border-bottom:0}.name{font-weight:750;font-size:17px}.date{color:var(--muted);font-size:13px;margin-top:3px}.badge{padding:6px 9px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}.ok{background:#d1fae5;color:#065f46}.warn{background:#fef3c7;color:#92400e}.dangerbg{background:#fee2e2;color:#991b1b}.empty{text-align:center;color:var(--muted);padding:28px 10px}
+small{color:var(--muted)}.notice{background:#eff6ff;color:#1e40af;border-radius:12px;padding:12px;font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<header><h1>📦 Controle de Validade</h1><p>Cadastre produtos e receba lembretes antes do vencimento.</p></header>
+<main>
+<section class="card">
+  <h2>Adicionar produto</h2>
+  <div class="grid">
+    <div><label for="name">Nome do produto</label><input id="name" placeholder="Ex.: Leite"></div>
+    <div><label for="date1">Data de validade 1 <small>(obrigatória)</small></label><input id="date1" type="date"></div>
+    <div><label for="date2">Data de validade 2 <small>(opcional)</small></label><input id="date2" type="date"></div>
+    <div style="grid-column:1/-1"><label for="note">Observação <small>(opcional)</small></label><input id="note" placeholder="Ex.: Guardar na geladeira após aberto"></div>
+  </div>
+  <div class="actions"><button class="primary" id="add">Adicionar produto</button><button class="secondary" id="notify">🔔 Ativar notificações</button></div>
+  <div class="notice">Você precisa informar pelo menos uma data. Se houver duas, o sistema usa a <b>data mais próxima</b> para os alertas e para o vencimento do produto.</div>
+</section>
+
+<section class="card">
+  <h2>Configuração do alerta</h2>
+  <div class="settings">
+    <div class="field"><label for="days">Avisar com quantos dias de antecedência?</label><input id="days" type="number" min="0" max="3650" value="7"></div>
+    <button class="primary" id="saveDays">Salvar configuração</button>
+  </div>
+  <div class="notice">Ex.: com <b>7 dias</b>, um produto que vence em 20/08 gera alerta a partir de 13/08.</div>
+</section>
+
+<section class="card">
+  <div class="stats">
+    <div class="stat"><b id="total">0</b><span>Total</span></div>
+    <div class="stat"><b id="soon">0</b><span>Próximos do vencimento</span></div>
+    <div class="stat"><b id="expired">0</b><span>Vencidos</span></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Meus produtos</h2>
+  <div id="list"></div>
+</section>
+</main>
+<script>
+const KEY='validade-produtos-v1', SETTINGS='validade-config-v1';
+let products=JSON.parse(localStorage.getItem(KEY)||'[]');
+/* Compatibilidade com produtos da versão anterior: a antiga "date"
+   vira a primeira data de validade. */
+products=products.map(p=>p.date1? p : {...p,date1:p.date||'',date2:'',note:p.note||''});
+products=products.filter(p=>p.date1);
+let config=JSON.parse(localStorage.getItem(SETTINGS)||'{"days":7}');
+document.querySelector('#days').value=config.days;
+
+function save(){localStorage.setItem(KEY,JSON.stringify(products)); render();}
+function today(){let d=new Date();d.setHours(0,0,0,0);return d}
+function parseDate(s){let [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)}
+function diffDays(date){return Math.ceil((date-today())/86400000)}
+function br(s){return parseDate(s).toLocaleDateString('pt-BR')}
+
+/* Quando existem duas datas, a mais próxima é tratada como o vencimento
+   para status, alertas e remoção automática. */
+function getDates(p){return [p.date1,p.date2].filter(Boolean)}
+function expirationDate(p){
+  const dates=getDates(p);
+  return dates.sort()[0] || null;
+}
+function cleanupExpired(){
+  const cutoff=today();
+  cutoff.setDate(cutoff.getDate()-1);
+  const before=products.length;
+  products=products.filter(p=>{
+    const exp=expirationDate(p);
+    return exp && parseDate(exp)>=cutoff;
+  });
+  if(products.length!==before)localStorage.setItem(KEY,JSON.stringify(products));
+}
+function status(p){
+  const exp=expirationDate(p);
+  const n=diffDays(parseDate(exp));
+  if(n<0)return ['Vencido', 'dangerbg', n];
+  if(n<=config.days)return [n===0?'Vence hoje':`Vence em ${n} dia${n===1?'':'s'}`,'warn',n];
+  return ['Dentro do prazo','ok',n];
+}
+function render(){
+  cleanupExpired();
+  const list=document.querySelector('#list');
+  products.sort((a,b)=>expirationDate(a).localeCompare(expirationDate(b)));
+  document.querySelector('#total').textContent=products.length;
+  document.querySelector('#soon').textContent=products.filter(p=>{
+    let n=diffDays(parseDate(expirationDate(p))); return n>=0&&n<=config.days
+  }).length;
+  document.querySelector('#expired').textContent=products.filter(p=>diffDays(parseDate(expirationDate(p)))<0).length;
+  if(!products.length){list.innerHTML='<div class="empty">Nenhum produto cadastrado ainda.</div>';return}
+  list.innerHTML=products.map(p=>{
+    const [label,cls,n]=status(p);
+    const dates=getDates(p).map((d,i)=>`Data ${i+1}: ${br(d)}`).join(' • ');
+    const note=p.note?`<div class="date">📝 ${esc(p.note)}</div>`:'';
+    return `<div class="item"><div><div class="name">${esc(p.name)}</div><div class="date">${dates}</div>${note}</div><div class="actions" style="margin:0"><span class="badge ${cls}">${label}</span><button class="danger" onclick="removeProduct('${p.id}')">Excluir</button></div></div>`;
+  }).join('');
+}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+window.removeProduct=id=>{products=products.filter(p=>p.id!==id);save()}
+document.querySelector('#add').onclick=()=>{
+  const name=document.querySelector('#name').value.trim();
+  const date1=document.querySelector('#date1').value;
+  const date2=document.querySelector('#date2').value;
+  const note=document.querySelector('#note').value.trim();
+
+  if(!name||!date1)return alert('Preencha o nome e pelo menos a primeira data de validade.');
+  if(date2 && date2===date1){
+    // É permitido repetir a data; não bloqueamos o cadastro.
+  }
+
+  products.push({id:crypto.randomUUID(),name,date1,date2:date2||'',note});
+  document.querySelector('#name').value='';
+  document.querySelector('#date1').value='';
+  document.querySelector('#date2').value='';
+  document.querySelector('#note').value='';
+  save();
+  checkAlerts();
+};
+document.querySelector('#saveDays').onclick=()=>{
+  const days=Math.max(0,Number(document.querySelector('#days').value)||0);
+  config.days=days;localStorage.setItem(SETTINGS,JSON.stringify(config));render();checkAlerts();alert('Configuração salva!');
+};
+document.querySelector('#notify').onclick=async()=>{
+  if(!('Notification' in window)){alert('Este navegador não oferece notificações.');return}
+  const p=await Notification.requestPermission();
+  if(p==='granted'){alert('Notificações ativadas!');checkAlerts()} else alert('Permissão de notificações não concedida.');
+};
+async function checkAlerts(){
+  if(!('Notification' in window)||Notification.permission!=='granted')return;
+  const todayKey=new Date().toISOString().slice(0,10);
+  const sent=JSON.parse(localStorage.getItem('validade-alertas-'+todayKey)||'[]');
+  for(const p of products){
+    const exp=expirationDate(p);
+    if(!exp)continue;
+    const n=diffDays(parseDate(exp));
+    if(n>=0&&n<=config.days&&!sent.includes(p.id)){
+      const body=`${p.name} vence em ${n} dia${n===1?'':'s'} (${br(exp)}).`;
+      if(navigator.serviceWorker?.controller){
+        navigator.serviceWorker.controller.postMessage({type:'NOTIFY',title:'⚠️ Produto perto do vencimento',body});
+      }else{
+        new Notification('⚠️ Produto perto do vencimento',{body});
+      }
+      sent.push(p.id);
+    }
+  }
+  localStorage.setItem('validade-alertas-'+todayKey,JSON.stringify(sent));
+}
+if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+render();checkAlerts();
+setInterval(checkAlerts,60000);
+</script>
+</body>
+</html>
